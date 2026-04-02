@@ -1,0 +1,22 @@
+.env
+.env.local
+backend/.env
+
+backend/.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# SQLite (legacy local)
+*.db
+
+# IDE
+.idea/
+.vscode/
