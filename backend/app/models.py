@@ -137,6 +137,9 @@ class Announcement(Base):
     )
     ann_pic: Mapped[str | None] = mapped_column(Text, nullable=True)
     ann_pic_mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # pending → на модерации; после одобрения: searching или found
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    publish_in_found: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -145,3 +148,28 @@ class Announcement(Base):
     categories: Mapped[list["Category"]] = relationship(
         secondary=announcement_categories_table, back_populates="announcements"
     )
+    replies: Mapped[list["AnnouncementReply"]] = relationship(
+        back_populates="announcement", cascade="all, delete-orphan"
+    )
+
+
+class AnnouncementReply(Base):
+    __tablename__ = "announcement_replies"
+    __table_args__ = (
+        UniqueConstraint("announcement_id", "user_id", name="uq_announcement_reply_user"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    announcement_id: Mapped[int] = mapped_column(
+        ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    announcement: Mapped["Announcement"] = relationship(back_populates="replies")
+    user: Mapped["User"] = relationship()

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_current_user, get_db
-from app.models import User
+from app.models import City, Region, User
 from app.schemas import (
     AvatarIn,
     MessageOk,
@@ -18,13 +18,25 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 
 
 @router.get("", response_model=ProfileOut)
-async def get_profile(user: User = Depends(get_current_user)) -> ProfileOut:
+async def get_profile(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> ProfileOut:
+    region_name = city_name = None
+    if user.region_id is not None:
+        reg = await session.get(Region, user.region_id)
+        region_name = reg.region_name if reg else None
+    if user.city_id is not None:
+        c = await session.get(City, user.city_id)
+        city_name = c.city_name if c else None
     return ProfileOut(
         id=user.id,
         nickname=user.nickname,
         email=user.email,
         region_id=user.region_id,
         city_id=user.city_id,
+        region_name=region_name,
+        city_name=city_name,
         avatar=user.avatar,
         avatar_mime=user.avatar_mime,
         role_id=user.role_id,

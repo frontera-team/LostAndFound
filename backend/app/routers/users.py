@@ -12,6 +12,8 @@ from app.schemas import (
     DeleteMessage,
     UserAdminItem,
     UserAdminListOut,
+    UserBlockPatchIn,
+    UserBlockPatchOut,
     UserCreateIn,
     UserCreateOut,
     UserPublicOut,
@@ -88,6 +90,26 @@ async def list_users_admin(
     return UserAdminListOut(total=total, items=items)
 
 
+@router.patch("/{user_id}/block", response_model=UserBlockPatchOut)
+async def patch_user_block(
+    user_id: int,
+    body: UserBlockPatchIn,
+    session: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> UserBlockPatchOut:
+    r = await session.execute(
+        select(User).options(selectinload(User.role)).where(User.id == user_id)
+    )
+    u = r.scalar_one_or_none()
+    if u is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if u.role is not None and u.role.role_name == "admin":
+        raise HTTPException(status_code=400, detail="Cannot change block status for admin")
+    u.is_blocked = body.is_blocked
+    await session.commit()
+    return UserBlockPatchOut(id=u.id, is_blocked=u.is_blocked)
+
+
 @router.patch("/{user_id}/role", response_model=UserRolePatchOut)
 async def patch_user_role(
     user_id: int,
@@ -141,6 +163,9 @@ async def user_announcements(
             ann_district_id=a.ann_district_id,
             user_creator_id=a.user_creator_id,
             category_ids=[c.id for c in a.categories],
+            status=a.status,
+            publish_in_found=a.publish_in_found,
+            response_count=None,
         )
 
     return AnnouncementListOut(total=total, items=[to_item(a) for a in rows])
@@ -199,6 +224,6 @@ async def delete_user(
     u = await session.get(User, user_id)
     if u is None:
         raise HTTPException(status_code=404, detail="User not found")
-    session.delete(u)
+    await session.delete(u)
     await session.commit()
     return DeleteMessage(message="user_deleted")

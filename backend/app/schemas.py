@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -81,6 +83,7 @@ class MeOut(BaseModel):
     region_id: int | None
     city_id: int | None
     role_id: int
+    role_name: str | None = None
     email_verified: bool
     avatar: str | None = None
 
@@ -93,6 +96,8 @@ class ProfileOut(BaseModel):
     email: str
     region_id: int | None
     city_id: int | None
+    region_name: str | None = None
+    city_name: str | None = None
     avatar: str | None = None
     avatar_mime: str | None = None
     role_id: int
@@ -171,6 +176,7 @@ class AnnouncementCreateIn(BaseModel):
     category_ids: list[int]
     ann_pic: str | None = None
     ann_pic_mime: str | None = None
+    publish_in_found: bool = False
 
     def resolved_region_id(self) -> int:
         rid = self.ann_region_id if self.ann_region_id is not None else self.ann_regions
@@ -194,6 +200,34 @@ class AnnouncementItemOut(BaseModel):
     ann_district_id: int
     user_creator_id: int
     category_ids: list[int] = []
+    author_nickname: str | None = None
+    region_name: str | None = None
+    city_name: str | None = None
+    district_name: str | None = None
+    ann_pic: str | None = None
+    ann_pic_mime: str | None = None
+    status: str = "searching"
+    publish_in_found: bool = False
+    response_count: int | None = Field(
+        default=None,
+        description="Отклики: только для карточек автора (текущий пользователь).",
+    )
+
+
+class AnnouncementReplyCreateIn(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+
+
+class AnnouncementReplyOut(BaseModel):
+    id: int
+    user_id: int
+    nickname: str
+    message: str
+    created_at: datetime
+
+
+class AnnouncementReplyListOut(BaseModel):
+    items: list[AnnouncementReplyOut]
 
 
 class AnnouncementListOut(BaseModel):
@@ -206,6 +240,11 @@ class AnnouncementDetailOut(BaseModel):
     ann_name: str
     ann_description: str
     ann_reward: int | None
+
+
+class AnnouncementModerateResult(BaseModel):
+    id: int
+    status: str
 
 
 class AnnouncementUpdateIn(BaseModel):
@@ -253,6 +292,15 @@ class UserRolePatchIn(BaseModel):
 class UserRolePatchOut(BaseModel):
     id: int
     role_id: int
+
+
+class UserBlockPatchIn(BaseModel):
+    is_blocked: bool
+
+
+class UserBlockPatchOut(BaseModel):
+    id: int
+    is_blocked: bool
 
 
 class UserPublicOut(BaseModel):

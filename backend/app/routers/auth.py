@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_current_user_optional, get_db
 from app.models import OtpCode, RefreshToken, Role, User
 from app.schemas import (
     ForgotPasswordIn,
@@ -61,9 +61,9 @@ async def _consume_otp(session: AsyncSession, email: str, purpose: str, code: st
     if row is None or row.code != code:
         return False
     if row.expires_at < datetime.now(timezone.utc):
-        session.delete(row)
+        await session.delete(row)
         return False
-    session.delete(row)
+    await session.delete(row)
     return True
 
 
@@ -149,8 +149,11 @@ async def logout(body: LogoutIn, session: AsyncSession = Depends(get_db)) -> Mes
     return MessageOk()
 
 
-@router.get("/me", response_model=MeOut)
-async def me(user: User = Depends(get_current_user)) -> MeOut:
+@router.get("/me", response_model=MeOut | None)
+async def me(user: User | None = Depends(get_current_user_optional)) -> MeOut | None:
+    if user is None:
+        return None
+    role_name = user.role.role_name if user.role else None
     return MeOut(
         id=user.id,
         email=user.email,
@@ -158,6 +161,7 @@ async def me(user: User = Depends(get_current_user)) -> MeOut:
         region_id=user.region_id,
         city_id=user.city_id,
         role_id=user.role_id,
+        role_name=role_name,
         email_verified=user.email_verified,
         avatar=user.avatar,
     )

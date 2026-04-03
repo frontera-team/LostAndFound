@@ -24,8 +24,12 @@ services:
     environment:
       APP_ENV: development
       DATABASE_URL: postgresql+asyncpg://lostandfound:lostandfound@db:5432/lostandfound
+      # Фото для сида демо-объявлений (рядом с репозиторием лежит poteryashki_maket/uploads)
+      SEED_UPLOADS_DIR: /seed-uploads
     ports:
       - '8001:8000'
+    volumes:
+      - ../poteryashki_maket/uploads:/seed-uploads:ro
     depends_on:
       db:
         condition: service_healthy

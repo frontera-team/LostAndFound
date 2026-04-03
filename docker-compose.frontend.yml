@@ -1,0 +1,11 @@
+# Подключить статику poteryashki_maket к API на одном порту (8001).
+# Репозиторий макета должен лежать рядом: Desktop/LostAndFound и Desktop/poteryashki_maket
+#
+#   docker compose -f docker-compose.yml -f docker-compose.frontend.yml up --build
+
+services:
+  api:
+    environment:
+      FRONTEND_STATIC_DIR: /static
+    volumes:
+      - ../poteryashki_maket/public:/static:ro

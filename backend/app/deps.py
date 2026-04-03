@@ -42,6 +42,32 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_optional(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """Как get_current_user, но без 401: гость → None (для GET /me)."""
+    if creds is None or not creds.credentials:
+        return None
+    payload = verify_jwt_payload(creds.credentials)
+    if not payload or payload.get("type") != "access":
+        return None
+    uid = payload.get("uid")
+    if isinstance(uid, float):
+        uid = int(uid)
+    if not isinstance(uid, int):
+        return None
+    result = await session.execute(
+        select(User).options(selectinload(User.role)).where(User.id == uid)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        return None
+    if user.is_blocked:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is blocked")
+    return user
+
+
 async def get_current_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
     if user.role is None or user.role.role_name != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
