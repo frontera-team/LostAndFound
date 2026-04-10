@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import exists, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -7,6 +8,7 @@ from app.deps import get_current_admin, get_current_user, get_current_user_optio
 from app.models import (
     Announcement,
     AnnouncementReply,
+    AnnouncementReport,
     Category,
     City,
     District,
@@ -24,6 +26,10 @@ from app.schemas import (
     AnnouncementReplyCreateIn,
     AnnouncementReplyListOut,
     AnnouncementReplyOut,
+    AnnouncementReportCreateIn,
+    AnnouncementReportCreateOut,
+    AnnouncementReportAdminItem,
+    AnnouncementReportListOut,
     AnnouncementUpdateIn,
     AnnouncementUpdateOut,
     DeleteMessage,
@@ -212,6 +218,48 @@ async def list_announcements(
     return AnnouncementListOut(total=total, items=items)
 
 
+@router.get("/reports", response_model=AnnouncementReportListOut)
+async def list_announcement_reports(
+    session: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_admin),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=200),
+) -> AnnouncementReportListOut:
+    count_stmt = select(func.count()).select_from(AnnouncementReport)
+    total = int(await session.scalar(count_stmt) or 0)
+    r = await session.execute(
+        select(AnnouncementReport)
+        .options(
+            selectinload(AnnouncementReport.announcement),
+            selectinload(AnnouncementReport.reporter),
+        )
+        .order_by(AnnouncementReport.id.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    rows = r.scalars().all()
+    items: list[AnnouncementReportAdminItem] = []
+    for rep in rows:
+        ann = rep.announcement
+        ru = rep.reporter
+        if ann is None or ru is None:
+            continue
+        items.append(
+            AnnouncementReportAdminItem(
+                id=rep.id,
+                announcement_id=rep.announcement_id,
+                ann_name=ann.ann_name,
+                announcement_status=ann.status,
+                reporter_id=rep.reporter_id,
+                reporter_nickname=ru.nickname,
+                reporter_email=ru.email,
+                message=rep.message,
+                created_at=rep.created_at,
+            )
+        )
+    return AnnouncementReportListOut(total=total, items=items)
+
+
 async def _can_view_replies(session: AsyncSession, user: User, ann: Announcement) -> bool:
     if ann.user_creator_id == user.id:
         return True
@@ -288,6 +336,36 @@ async def list_announcement_replies(
             )
         )
     return AnnouncementReplyListOut(items=out)
+
+
+@router.post("/{announcement_id}/reports", response_model=AnnouncementReportCreateOut)
+async def create_announcement_report(
+    announcement_id: int,
+    body: AnnouncementReportCreateIn,
+    session: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AnnouncementReportCreateOut:
+    a = await session.get(Announcement, announcement_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if a.user_creator_id == user.id:
+        raise HTTPException(status_code=400, detail="Cannot report own announcement")
+    if a.status not in ("searching", "found"):
+        raise HTTPException(status_code=404, detail="Not found")
+    msg = body.message.strip()
+    if not msg:
+        raise HTTPException(status_code=422, detail="Empty message")
+    rep = AnnouncementReport(
+        announcement_id=announcement_id, reporter_id=user.id, message=msg
+    )
+    session.add(rep)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Already reported")
+    await session.refresh(rep)
+    return AnnouncementReportCreateOut(id=rep.id)
 
 
 @router.get("/{announcement_id}", response_model=AnnouncementDetailOut)

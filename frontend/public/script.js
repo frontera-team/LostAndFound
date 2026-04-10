@@ -41,10 +41,14 @@ const authModal = document.getElementById('authModal');
 const adminModal = document.getElementById('adminModal');
 const respondModal = document.getElementById('respondModal');
 const repliesModal = document.getElementById('repliesModal');
+const reportModal = document.getElementById('reportModal');
 const respondForm = document.getElementById('respondForm');
 const respondAnnouncementId = document.getElementById('respondAnnouncementId');
 const respondMessage = document.getElementById('respondMessage');
 const repliesListContainer = document.getElementById('repliesListContainer');
+const reportForm = document.getElementById('reportForm');
+const reportAnnouncementId = document.getElementById('reportAnnouncementId');
+const reportMessage = document.getElementById('reportMessage');
 
 const lightThemeOption = document.getElementById('lightThemeOption');
 const darkThemeOption = document.getElementById('darkThemeOption');
@@ -112,13 +116,22 @@ function annToPost(a) {
   };
 }
 
+function formatErrorDetail(detail) {
+  if (detail == null) return '';
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail))
+    return detail.map((d) => d.msg || d).join('; ');
+  if (typeof detail === 'object' && detail.message != null)
+    return String(detail.message);
+  return typeof detail === 'object' ? JSON.stringify(detail) : String(detail);
+}
+
 async function parseError(res) {
   try {
     const j = await res.json();
     if (j.detail) {
-      if (Array.isArray(j.detail))
-        return j.detail.map((d) => d.msg || d).join('; ');
-      return typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+      const formatted = formatErrorDetail(j.detail);
+      if (formatted) return formatted;
     }
     return j.error || j.message || `Ошибка ${res.status}`;
   } catch {
@@ -321,6 +334,14 @@ function renderPosts(emptyMessage) {
       ns === 'searching'
     ) {
       buttonsHtml += `<button type="button" class="respond-btn" data-id="${post.id}">ОТКЛИКНУТЬСЯ</button>`;
+    }
+    if (
+      (currentTab === 'searching' || currentTab === 'found') &&
+      currentUser &&
+      !isOwner &&
+      (ns === 'searching' || ns === 'found')
+    ) {
+      buttonsHtml += `<button type="button" class="report-btn" data-id="${post.id}">ПОЖАЛОВАТЬСЯ</button>`;
     }
     if (
       currentUser &&
@@ -652,9 +673,151 @@ async function fillRegisterGeo() {
   await citiesFor(regSel.value);
 }
 
+function loadGoogleIdentityScript() {
+  return new Promise((resolve, reject) => {
+    if (window.google?.accounts?.id) {
+      resolve();
+      return;
+    }
+    const existing = document.querySelector('script[data-lf-google-gsi]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () =>
+        reject(new Error('Не удалось загрузить Google Sign-In')),
+      );
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.dataset.lfGoogleGsi = '1';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Не удалось загрузить Google Sign-In'));
+    document.head.appendChild(s);
+  });
+}
+
+let googleSignInPrepared = false;
+let googleGsiInitialized = false;
+
+async function prepareGoogleSignIn() {
+  const wrapL = document.getElementById('googleSignInWrapLogin');
+  const wrapR = document.getElementById('googleSignInWrapRegister');
+  const hostL = document.getElementById('googleBtnLogin');
+  const hostR = document.getElementById('googleBtnRegister');
+  if (!wrapL || !wrapR || !hostL || !hostR) return;
+
+  const res = await api.request('/api/auth/google-client-id', { skipAuth: true });
+  if (!res.ok) return;
+  const { client_id: clientId } = await res.json();
+  if (!clientId) return;
+
+  try {
+    await loadGoogleIdentityScript();
+  } catch (e) {
+    console.warn(e);
+    return;
+  }
+
+  if (!googleGsiInitialized) {
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: onGoogleCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+    googleGsiInitialized = true;
+  }
+
+  const btnOpts = {
+    type: 'standard',
+    theme: 'outline',
+    size: 'large',
+    shape: 'pill',
+    text: 'continue_with',
+    locale: 'ru',
+    logo_alignment: 'left',
+    width: 300,
+  };
+
+  if (!googleSignInPrepared) {
+    hostL.replaceChildren();
+    hostR.replaceChildren();
+    window.google.accounts.id.renderButton(hostL, btnOpts);
+    window.google.accounts.id.renderButton(hostR, btnOpts);
+    googleSignInPrepared = true;
+  }
+
+  wrapL.style.display = 'block';
+  wrapR.style.display = 'block';
+}
+
+async function onGoogleCredential(response) {
+  if (!response?.credential) return;
+
+  const registerTab = document.getElementById('registerTab');
+  const isRegister = registerTab?.classList.contains('active') ?? false;
+  const payload = { id_token: response.credential };
+
+  if (isRegister) {
+    const nickname = document.getElementById('regNickname').value.trim();
+    const region_id = parseInt(
+      document.getElementById('regRegionSelect').value,
+      10,
+    );
+    const city_id = parseInt(
+      document.getElementById('regCitySelect').value,
+      10,
+    );
+    if (!Number.isFinite(region_id) || !Number.isFinite(city_id)) {
+      alert('Выберите регион и город, затем снова нажмите «Войти через Google».');
+      return;
+    }
+    Object.assign(payload, { region_id, city_id });
+    if (nickname) payload.nickname = nickname;
+  }
+
+  const res = await api.request('/api/auth/google', {
+    method: 'POST',
+    json: payload,
+    skipAuth: true,
+  });
+
+  if (res.ok) {
+    const data = await res.json();
+    api.setTokens(data.access_token, data.refresh_token);
+    authModal.style.display = 'none';
+    document.getElementById('loginForm')?.reset();
+    document.getElementById('registerForm')?.reset();
+    await fillRegisterGeo();
+    await loadUser();
+    loadPosts();
+    return;
+  }
+
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    alert(`Ошибка ${res.status}`);
+    return;
+  }
+
+  if (res.status === 400 && body.detail?.code === 'google_profile_required') {
+    alert(
+      `${body.detail.message || 'Заполните профиль'}\n\nОткройте вкладку «Регистрация», выберите регион и город, при необходимости укажите никнейм, затем снова нажмите кнопку Google.`,
+    );
+    return;
+  }
+
+  alert(formatErrorDetail(body.detail) || body.message || `Ошибка ${res.status}`);
+}
+
 async function openAuthModal() {
   authModal.style.display = 'block';
   await fillRegisterGeo();
+  prepareGoogleSignIn();
 }
 
 document
@@ -796,6 +959,16 @@ function updateAdminContent() {
   document
     .querySelectorAll('.admin-content')
     .forEach((content) => content.classList.remove('active'));
+  const statusSection = document.getElementById('adminStatusSection');
+  if (statusSection) {
+    statusSection.style.display =
+      currentAdminType === 'reports' ? 'none' : '';
+  }
+  if (currentAdminType === 'reports') {
+    const el = document.getElementById('reportsContent');
+    if (el) el.classList.add('active');
+    return;
+  }
   const contentId = `${currentAdminType}${currentAdminStatus === 'active' ? 'Active' : 'Banned'}Content`;
   const activeContent = document.getElementById(contentId);
   if (activeContent) activeContent.classList.add('active');
@@ -823,9 +996,44 @@ document.querySelectorAll('.admin-status-btn').forEach((btn) => {
   });
 });
 
+async function loadReportsList() {
+  const list = document.getElementById('reportsList');
+  const cnt = document.getElementById('reportsCount');
+  if (!list || !cnt) return;
+  const r = await api.request('/api/announcements/reports?limit=200&page=1');
+  if (!r.ok) {
+    list.innerHTML = `<div class="info-message">${escapeHtml(await parseError(r))}</div>`;
+    cnt.textContent = '0';
+    return;
+  }
+  const data = await r.json();
+  const items = data.items || [];
+  cnt.textContent = String(data.total != null ? data.total : items.length);
+  if (items.length === 0) {
+    list.innerHTML = '<div class="info-message">ЖАЛОБ ПОКА НЕТ</div>';
+    return;
+  }
+  list.innerHTML = items
+    .map((it) => {
+      const st = escapeHtml(it.announcement_status || '—');
+      const dt = escapeHtml(formatReplyDate(it.created_at));
+      return `
+        <div class="admin-card admin-card--report">
+            <div class="admin-card-info">
+                <div class="admin-card-name">${escapeHtml(it.ann_name)}</div>
+                <div class="admin-card-email">Объявление #${it.announcement_id} · ${st}</div>
+                <div class="admin-report-meta">${escapeHtml(it.reporter_nickname)} (${escapeHtml(it.reporter_email)}) · ${dt}</div>
+                <div class="admin-report-text">${escapeHtml(it.message)}</div>
+            </div>
+        </div>`;
+    })
+    .join('');
+}
+
 async function loadAdminData() {
   await loadActiveUsers();
   await loadBannedUsers();
+  await loadReportsList();
   const modList = document.getElementById('moderationPostsList');
   const banList = document.getElementById('bannedPostsList');
   if (modList) {
@@ -954,6 +1162,14 @@ function openRespondModal(announcementId) {
   respondMessage.focus();
 }
 
+function openReportModal(announcementId) {
+  if (!reportModal || !reportAnnouncementId || !reportMessage) return;
+  reportAnnouncementId.value = String(announcementId);
+  reportMessage.value = '';
+  reportModal.style.display = 'block';
+  reportMessage.focus();
+}
+
 async function openRepliesModal(announcementId) {
   if (!repliesModal || !repliesListContainer) return;
   repliesListContainer.innerHTML = '<div class="info-message">ЗАГРУЗКА…</div>';
@@ -1015,6 +1231,18 @@ postsContainer.addEventListener('click', (e) => {
     const raw = mf.getAttribute('data-id');
     const id = raw != null ? Number(raw) : NaN;
     if (Number.isFinite(id)) markFoundByAuthor(id);
+    return;
+  }
+  const rep = e.target.closest('.report-btn');
+  if (rep && postsContainer.contains(rep)) {
+    e.preventDefault();
+    if (!currentUser) {
+      openAuthModal();
+      return;
+    }
+    const raw = rep.getAttribute('data-id');
+    const id = raw != null ? Number(raw) : NaN;
+    if (Number.isFinite(id)) openReportModal(id);
   }
 });
 
@@ -1031,6 +1259,25 @@ if (respondForm) {
     if (res.ok) {
       respondModal.style.display = 'none';
       await loadPosts();
+    } else {
+      alert(await parseError(res));
+    }
+  });
+}
+
+if (reportForm) {
+  reportForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = Number(reportAnnouncementId?.value);
+    const message = (reportMessage?.value || '').trim();
+    if (!Number.isFinite(id) || !message) return;
+    const res = await api.request(`/api/announcements/${id}/reports`, {
+      method: 'POST',
+      json: { message },
+    });
+    if (res.ok) {
+      reportModal.style.display = 'none';
+      alert('Жалоба отправлена');
     } else {
       alert(await parseError(res));
     }
@@ -1066,6 +1313,7 @@ document.querySelectorAll('.close').forEach((el) => {
     adminModal.style.display = 'none';
     if (respondModal) respondModal.style.display = 'none';
     if (repliesModal) repliesModal.style.display = 'none';
+    if (reportModal) reportModal.style.display = 'none';
   });
 });
 

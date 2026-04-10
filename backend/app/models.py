@@ -151,6 +151,33 @@ class Announcement(Base):
     replies: Mapped[list["AnnouncementReply"]] = relationship(
         back_populates="announcement", cascade="all, delete-orphan"
     )
+    reports: Mapped[list["AnnouncementReport"]] = relationship(
+        back_populates="announcement", cascade="all, delete-orphan"
+    )
+
+
+class AnnouncementReport(Base):
+    __tablename__ = "announcement_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "announcement_id", "reporter_id", name="uq_report_ann_reporter"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    announcement_id: Mapped[int] = mapped_column(
+        ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    reporter_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    announcement: Mapped["Announcement"] = relationship(back_populates="reports")
+    reporter: Mapped["User"] = relationship()
 
 
 class AnnouncementReply(Base):

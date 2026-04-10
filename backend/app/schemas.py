@@ -31,6 +31,17 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
+class GoogleClientIdOut(BaseModel):
+    client_id: str | None = None
+
+
+class GoogleAuthIn(BaseModel):
+    id_token: str = Field(min_length=20)
+    nickname: str | None = Field(default=None, min_length=1, max_length=128)
+    region_id: int | None = None
+    city_id: int | None = None
+
+
 class RefreshIn(BaseModel):
     refresh_token: str
 
@@ -228,6 +239,31 @@ class AnnouncementReplyOut(BaseModel):
 
 class AnnouncementReplyListOut(BaseModel):
     items: list[AnnouncementReplyOut]
+
+
+class AnnouncementReportCreateIn(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+
+
+class AnnouncementReportCreateOut(BaseModel):
+    id: int
+
+
+class AnnouncementReportAdminItem(BaseModel):
+    id: int
+    announcement_id: int
+    ann_name: str
+    announcement_status: str
+    reporter_id: int
+    reporter_nickname: str
+    reporter_email: str
+    message: str
+    created_at: datetime
+
+
+class AnnouncementReportListOut(BaseModel):
+    total: int
+    items: list[AnnouncementReportAdminItem]
 
 
 class AnnouncementListOut(BaseModel):

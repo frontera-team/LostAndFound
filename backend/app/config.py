@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     default_admin_email: str = "admin@example.com"
     default_admin_password: str = "admin123"
     frontend_static_dir: str | None = None
+    google_oauth_client_id: str | None = None
 
 
 settings = Settings()

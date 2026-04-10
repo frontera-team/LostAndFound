@@ -206,6 +206,28 @@
       </div>
     </div>
 
+    <!-- Жалоба на объявление (чужое, опубликованное) -->
+    <div id="reportModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>ПОЖАЛОВАТЬСЯ</h2>
+        <form id="reportForm">
+          <input type="hidden" id="reportAnnouncementId" value="" />
+          <div class="input-group">
+            <label>ПРИЧИНА / КОММЕНТАРИЙ</label>
+            <textarea
+              id="reportMessage"
+              rows="5"
+              required
+              maxlength="4000"
+              placeholder="Опишите нарушение или причину жалобы…"
+            ></textarea>
+          </div>
+          <button type="submit" class="submit-btn">ОТПРАВИТЬ ЖАЛОБУ</button>
+        </form>
+      </div>
+    </div>
+
     <!-- Модальное окно для авторизации -->
     <div id="authModal" class="modal">
       <div class="modal-content">
@@ -242,6 +264,22 @@
               />
             </div>
             <button type="submit" class="auth-submit-btn">ВОЙТИ</button>
+            <div
+              id="googleSignInWrapLogin"
+              class="auth-google-wrap"
+              style="display: none"
+            >
+              <div class="auth-google-divider" aria-hidden="true">
+                <span>или</span>
+              </div>
+              <div class="auth-google-btn-surface">
+                <div
+                  id="googleBtnLogin"
+                  class="auth-google-btn-host"
+                  aria-label="Войти через Google"
+                ></div>
+              </div>
+            </div>
           </form>
         </div>
 
@@ -285,6 +323,25 @@
             <button type="submit" class="auth-submit-btn">
               ЗАРЕГИСТРИРОВАТЬСЯ
             </button>
+            <div
+              id="googleSignInWrapRegister"
+              class="auth-google-wrap"
+              style="display: none"
+            >
+              <div class="auth-google-divider" aria-hidden="true">
+                <span>или через Google</span>
+              </div>
+              <p class="auth-google-subhint">
+                Сначала выберите регион и город выше
+              </p>
+              <div class="auth-google-btn-surface">
+                <div
+                  id="googleBtnRegister"
+                  class="auth-google-btn-host"
+                  aria-label="Регистрация через Google"
+                ></div>
+              </div>
+            </div>
           </form>
         </div>
       </div>
@@ -305,10 +362,13 @@
             <button class="admin-toggle-btn" data-toggle-type="posts">
               ОБЪЯВЛЕНИЯ
             </button>
+            <button class="admin-toggle-btn" data-toggle-type="reports">
+              ЖАЛОБЫ
+            </button>
           </div>
         </div>
 
-        <div class="admin-section">
+        <div id="adminStatusSection" class="admin-section">
           <div class="section-label">СТАТУС</div>
           <div class="admin-toggle-group">
             <button class="admin-status-btn active" data-status-type="active">
@@ -353,6 +413,14 @@
           <button id="unbanSelectedPostsBtn" class="admin-unban-btn">
             РАЗБЛОКИРОВАТЬ ВЫБРАННЫЕ
           </button>
+        </div>
+
+        <div id="reportsContent" class="admin-content">
+          <div class="admin-content-header">
+            <span>ЖАЛОБЫ НА ОБЪЯВЛЕНИЯ</span>
+            <span class="content-count" id="reportsCount">0</span>
+          </div>
+          <div id="reportsList" class="admin-list"></div>
         </div>
       </div>
     </div>

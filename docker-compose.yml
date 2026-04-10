@@ -24,6 +24,7 @@ services:
     environment:
       APP_ENV: development
       DATABASE_URL: postgresql+asyncpg://lostandfound:lostandfound@db:5432/lostandfound
+      GOOGLE_OAUTH_CLIENT_ID: 336822626552-j2c04i6j2lgu75ar2c0ctmjpbm74oee1.apps.googleusercontent.com
       # Фото для сида демо-объявлений (рядом с репозиторием лежит poteryashki_maket/uploads)
       SEED_UPLOADS_DIR: /seed-uploads
     ports:

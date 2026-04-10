@@ -2,16 +2,19 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.deps import get_current_user, get_current_user_optional, get_db
 from app.models import OtpCode, RefreshToken, Role, User
+from app.google_oauth import verify_google_id_token
 from app.schemas import (
     ForgotPasswordIn,
     ForgotPasswordOut,
+    GoogleAuthIn,
+    GoogleClientIdOut,
     LoginIn,
     LogoutIn,
     MeOut,
@@ -106,6 +109,68 @@ async def register(body: RegisterIn, session: AsyncSession = Depends(get_db)) ->
         nickname=user.nickname,
         email_verified=user.email_verified,
     )
+
+
+@router.get("/google-client-id", response_model=GoogleClientIdOut)
+async def google_client_id() -> GoogleClientIdOut:
+    return GoogleClientIdOut(client_id=settings.google_oauth_client_id)
+
+
+@router.post("/google", response_model=TokenOut)
+async def auth_google(body: GoogleAuthIn, session: AsyncSession = Depends(get_db)) -> TokenOut:
+    client_id = settings.google_oauth_client_id
+    if not client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    claims = await verify_google_id_token(body.id_token, client_id)
+    email = str(claims.get("email", "")).strip()
+
+    r = await session.execute(
+        select(User).options(selectinload(User.role)).where(func.lower(User.email) == email.lower())
+    )
+    user = r.scalar_one_or_none()
+
+    if user is None:
+        if body.region_id is None or body.city_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "google_profile_required",
+                    "message": "Укажите регион, город и никнейм на вкладке «Регистрация».",
+                },
+            )
+        nick_src = (body.nickname or claims.get("name") or email.split("@")[0]).strip()
+        if not nick_src:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "google_profile_required",
+                    "message": "Укажите никнейм.",
+                },
+            )
+        nickname = nick_src[:128]
+        role_user = await session.scalar(select(Role).where(Role.role_name == "user"))
+        if role_user is None:
+            raise HTTPException(status_code=500, detail="Roles not seeded")
+        user = User(
+            email=email,
+            hash_password=hash_password(secrets.token_urlsafe(48)),
+            nickname=nickname,
+            region_id=body.region_id,
+            city_id=body.city_id,
+            role_id=role_user.id,
+            email_verified=True,
+        )
+        session.add(user)
+        await session.flush()
+
+    if user.is_blocked:
+        raise HTTPException(status_code=403, detail="User is blocked")
+
+    access = create_access_token(str(user.email), user.id, user.role_id)
+    raw_refresh = new_refresh_token_value()
+    await _store_refresh(session, user.id, raw_refresh)
+    await session.commit()
+    return TokenOut(access_token=access, refresh_token=raw_refresh, token_type="bearer")
 
 
 @router.post("/login", response_model=TokenOut)
