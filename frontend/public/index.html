@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Сервис для поиска потерянных вещей" />
+    <meta name="api-origin" content="" />
+    <title>Потеряшки — Найди пропажу</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="light-theme">
+    <header>
+      <div class="logo-container">
+        <div class="logo-svg">
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 40 40"
+            fill="none"
+            xmlns="logo/обложка.png"
+          >
+            <rect width="40" height="40" rx="10" fill="url(#gradient)" />
+            <path
+              d="M20 12 L24 18 L20 24 L16 18 L20 12Z"
+              fill="white"
+              stroke="white"
+              stroke-width="1.5"
+            />
+            <circle cx="20" cy="18" r="2" fill="#ff6b6b" />
+            <path
+              d="M14 26 L26 26"
+              stroke="white"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+            <defs>
+              <linearGradient
+                id="gradient"
+                x1="0"
+                y1="0"
+                x2="40"
+                y2="40"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stop-color="#ff6b6b" />
+                <stop offset="1" stop-color="#ff8787" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <span class="site-title">Потеряшки</span>
+      </div>
+
+      <div class="theme-switch-wrapper">
+        <div class="theme-switch-container">
+          <div class="theme-slider light" id="themeSlider"></div>
+          <button id="lightThemeOption" class="theme-option active">
+            СВЕТЛАЯ
+          </button>
+          <button id="darkThemeOption" class="theme-option">ТЕМНАЯ</button>
+        </div>
+      </div>
+
+      <div class="auth-buttons">
+        <!-- Динамическое содержимое -->
+      </div>
+    </header>
+
+    <div class="navigation-bar">
+      <button id="searchingTabBtn" class="nav-tab active">В ПОИСКЕ</button>
+      <button id="mineTabBtn" class="nav-tab">МОИ ОБЪЯВЛЕНИЯ</button>
+      <button id="foundTabBtn" class="nav-tab">НАЙДЕНО</button>
+    </div>
+
+    <div class="action-bar">
+      <div class="search-box">
+        <input
+          type="text"
+          id="postsSearchInput"
+          placeholder="ПОИСК ПО НАЗВАНИЮ И ОПИСАНИЮ"
+        />
+      </div>
+      <div class="action-buttons">
+        <button id="createPostBtn" class="add-btn" style="display: none">
+          + ДОБАВИТЬ ОБЪЯВЛЕНИЕ
+        </button>
+        <button id="adminPanelBtn" class="admin-btn" style="display: none">
+          АДМИН ПАНЕЛЬ
+        </button>
+      </div>
+    </div>
+
+    <main>
+      <div id="postsContainer" class="posts-grid"></div>
+    </main>
+
+    <!-- Модальное окно для создания объявления -->
+    <div id="createPostModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>НОВОЕ ОБЪЯВЛЕНИЕ</h2>
+        <form id="createPostForm" enctype="multipart/form-data">
+          <div class="input-group">
+            <label>НАЗВАНИЕ</label>
+            <input
+              type="text"
+              name="title"
+              placeholder="Например: Черный рюкзак"
+              required
+            />
+          </div>
+          <div class="input-group">
+            <label>ОПИСАНИЕ</label>
+            <textarea
+              name="description"
+              placeholder="Опишите вещь, особые приметы..."
+              rows="3"
+              required
+            ></textarea>
+          </div>
+          <div class="input-group">
+            <label>РЕГИОН</label>
+            <select id="createRegionSelect" required></select>
+          </div>
+          <div class="input-group">
+            <label>ГОРОД</label>
+            <select id="createCitySelect" required></select>
+          </div>
+          <div class="input-group">
+            <label>РАЙОН</label>
+            <select id="createDistrictSelect" required></select>
+          </div>
+          <div class="input-group">
+            <label>КАТЕГОРИЯ</label>
+            <select id="createCategorySelect" required></select>
+          </div>
+
+          <div class="reward-option">
+            <label>
+              <input type="radio" name="rewardType" value="voluntary" checked />
+              ДОБРОВОЛЬНО
+            </label>
+            <label>
+              <input type="radio" name="rewardType" value="money" />
+              ВОЗНАГРАЖДЕНИЕ
+            </label>
+          </div>
+
+          <div id="rewardInputContainer" style="display: none">
+            <div class="input-group">
+              <label>СУММА (₽)</label>
+              <input
+                type="number"
+                name="reward"
+                placeholder="1000"
+                step="100"
+              />
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label>ФОТО</label>
+            <input type="file" name="image" accept="image/*" />
+          </div>
+
+          <div class="input-group">
+            <label>
+              <input type="checkbox" id="publishInFoundCheckbox" name="publishInFound" />
+              После одобрения модератором показывать в «Найдено», а не в «Общие»
+            </label>
+          </div>
+
+          <button type="submit" class="submit-btn">ОПУБЛИКОВАТЬ</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Отклик на объявление (не своё, вкладка «В поиске») -->
+    <div id="respondModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>ОТКЛИКНУТЬСЯ</h2>
+        <form id="respondForm">
+          <input type="hidden" id="respondAnnouncementId" value="" />
+          <div class="input-group">
+            <label>КОММЕНТАРИЙ ДЛЯ АВТОРА</label>
+            <textarea
+              id="respondMessage"
+              rows="5"
+              required
+              maxlength="4000"
+              placeholder="Опишите, что известно о находке или как связаться…"
+            ></textarea>
+          </div>
+          <button type="submit" class="submit-btn">ОТПРАВИТЬ ОТКЛИК</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Список откликов (только для автора объявления) -->
+    <div id="repliesModal" class="modal">
+      <div class="modal-content modal-content--wide">
+        <span class="close">&times;</span>
+        <h2>ОТКЛИКИ</h2>
+        <div id="repliesListContainer" class="replies-list-container"></div>
+      </div>
+    </div>
+
+    <!-- Модальное окно для авторизации -->
+    <div id="authModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>ДОБРО ПОЖАЛОВАТЬ</h2>
+
+        <div class="auth-tabs">
+          <button class="auth-tab-btn active" data-auth-tab="login">
+            ВХОД
+          </button>
+          <button class="auth-tab-btn" data-auth-tab="register">
+            РЕГИСТРАЦИЯ
+          </button>
+        </div>
+
+        <div id="loginTab" class="auth-tab-content active">
+          <form id="loginForm">
+            <div class="input-group">
+              <label>EMAIL</label>
+              <input
+                type="email"
+                id="loginEmail"
+                placeholder="example@mail.com"
+                required
+              />
+            </div>
+            <div class="input-group">
+              <label>ПАРОЛЬ</label>
+              <input
+                type="password"
+                id="loginPassword"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            <button type="submit" class="auth-submit-btn">ВОЙТИ</button>
+          </form>
+        </div>
+
+        <div id="registerTab" class="auth-tab-content">
+          <form id="registerForm">
+            <div class="input-group">
+              <label>НИКНЕЙМ</label>
+              <input
+                type="text"
+                id="regNickname"
+                placeholder="Как к вам обращаться?"
+                required
+              />
+            </div>
+            <div class="input-group">
+              <label>EMAIL</label>
+              <input
+                type="email"
+                id="regEmail"
+                placeholder="example@mail.com"
+                required
+              />
+            </div>
+            <div class="input-group">
+              <label>РЕГИОН</label>
+              <select id="regRegionSelect" required></select>
+            </div>
+            <div class="input-group">
+              <label>ГОРОД</label>
+              <select id="regCitySelect" required></select>
+            </div>
+            <div class="input-group">
+              <label>ПАРОЛЬ</label>
+              <input
+                type="password"
+                id="regPassword"
+                placeholder="Придумайте надежный пароль"
+                required
+              />
+            </div>
+            <button type="submit" class="auth-submit-btn">
+              ЗАРЕГИСТРИРОВАТЬСЯ
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка админки -->
+    <div id="adminModal" class="modal admin-modal">
+      <div class="modal-content admin-modal-content">
+        <span class="close">&times;</span>
+        <h2>ПАНЕЛЬ АДМИНИСТРАТОРА</h2>
+
+        <div class="admin-section">
+          <div class="section-label">ТИП</div>
+          <div class="admin-toggle-group">
+            <button class="admin-toggle-btn active" data-toggle-type="users">
+              ПОЛЬЗОВАТЕЛИ
+            </button>
+            <button class="admin-toggle-btn" data-toggle-type="posts">
+              ОБЪЯВЛЕНИЯ
+            </button>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <div class="section-label">СТАТУС</div>
+          <div class="admin-toggle-group">
+            <button class="admin-status-btn active" data-status-type="active">
+              АКТИВНЫЕ
+            </button>
+            <button class="admin-status-btn" data-status-type="banned">
+              ЗАБЛОКИРОВАННЫЕ
+            </button>
+          </div>
+        </div>
+
+        <div id="usersActiveContent" class="admin-content active">
+          <div class="admin-content-header">
+            <span>АКТИВНЫЕ ПОЛЬЗОВАТЕЛИ</span>
+            <span class="content-count" id="activeUsersCount">0</span>
+          </div>
+          <div id="activeUsersList" class="admin-list"></div>
+        </div>
+
+        <div id="usersBannedContent" class="admin-content">
+          <div class="admin-content-header">
+            <span>ЗАБЛОКИРОВАННЫЕ ПОЛЬЗОВАТЕЛИ</span>
+            <span class="content-count" id="bannedUsersCount">0</span>
+          </div>
+          <div id="bannedUsersList" class="admin-list"></div>
+        </div>
+
+        <div id="postsActiveContent" class="admin-content">
+          <div class="admin-content-header">
+            <span>ОБЪЯВЛЕНИЯ НА МОДЕРАЦИИ</span>
+            <span class="content-count" id="moderationPostsCount">0</span>
+          </div>
+          <div id="moderationPostsList" class="admin-list"></div>
+        </div>
+
+        <div id="postsBannedContent" class="admin-content">
+          <div class="admin-content-header">
+            <span>ЗАБЛОКИРОВАННЫЕ ОБЪЯВЛЕНИЯ</span>
+            <span class="content-count" id="bannedPostsCount">0</span>
+          </div>
+          <div id="bannedPostsList" class="admin-list"></div>
+          <button id="unbanSelectedPostsBtn" class="admin-unban-btn">
+            РАЗБЛОКИРОВАТЬ ВЫБРАННЫЕ
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="api.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>

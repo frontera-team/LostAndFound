@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Профиль пользователя Потеряшки" />
+    <meta name="api-origin" content="" />
+    <title>Профиль — Потеряшки</title>
+    <link rel="stylesheet" href="profile.css" />
+  </head>
+  <body>
+    <main class="profile-page">
+      <section class="profile-card" id="profileCard">
+        <h1>ПРОФИЛЬ</h1>
+
+        <div class="profile-tabs">
+          <button
+            id="profileInfoTabBtn"
+            class="profile-tab-btn active"
+            type="button"
+          >
+            ДАННЫЕ ПРОФИЛЯ
+          </button>
+          <button id="foundByMeTabBtn" class="profile-tab-btn" type="button">
+            ЧТО Я НАШЕЛ
+          </button>
+          <button
+            id="adminModerationTabBtn"
+            class="profile-tab-btn"
+            type="button"
+            hidden
+          >
+            МОДЕРАЦИЯ
+          </button>
+        </div>
+
+        <div id="profileInfoTab" class="profile-tab-content active">
+          <div class="avatar-wrap">
+            <img
+              id="avatarPreview"
+              class="avatar"
+              src="https://via.placeholder.com/160x160/f8f9fa/6c757d?text=AVATAR"
+              alt="Аватар пользователя"
+            />
+          </div>
+
+          <form id="profileForm" enctype="multipart/form-data">
+            <div class="field-group">
+              <label for="nicknameInput">НИКНЕЙМ</label>
+              <input id="nicknameInput" name="nickname" type="text" required />
+            </div>
+
+            <div class="field-group">
+              <label for="regionSelect">РЕГИОН</label>
+              <select id="regionSelect" name="region_id"></select>
+            </div>
+
+            <div class="field-group">
+              <label for="citySelect">ГОРОД</label>
+              <select id="citySelect" name="city_id"></select>
+            </div>
+
+            <div class="field-group">
+              <label for="avatarInput">АВАТАРКА</label>
+              <input
+                id="avatarInput"
+                name="avatar"
+                type="file"
+                accept="image/*"
+              />
+            </div>
+
+            <div class="meta-grid">
+              <div>
+                <div class="meta-title">EMAIL</div>
+                <div id="emailValue" class="meta-value">-</div>
+              </div>
+              <div>
+                <div class="meta-title">РЕГИОН</div>
+                <div id="regionValue" class="meta-value">-</div>
+              </div>
+              <div>
+                <div class="meta-title">ГОРОД</div>
+                <div id="cityValue" class="meta-value">-</div>
+              </div>
+            </div>
+
+            <button type="submit" class="primary-btn">
+              СОХРАНИТЬ ИЗМЕНЕНИЯ
+            </button>
+          </form>
+
+          <div class="actions">
+            <a class="secondary-btn" href="index.html">НА ГЛАВНУЮ</a>
+            <button id="logoutBtn" class="danger-btn" type="button">
+              ВЫЙТИ
+            </button>
+          </div>
+        </div>
+
+        <div id="foundByMeTab" class="profile-tab-content">
+          <div id="foundByMeList" class="found-posts-list"></div>
+        </div>
+
+        <div id="adminModerationTab" class="profile-tab-content">
+          <div class="profile-mod-toolbar">
+            <span class="profile-mod-toolbar-title">ОЧЕРЕДЬ МОДЕРАЦИИ</span>
+            <span class="profile-mod-count" id="profileModCount">0</span>
+          </div>
+          <p class="profile-mod-lead">
+            Все объявления со статусом «на модерации». Нажмите «пропустить», чтобы
+            опубликовать в ленте.
+          </p>
+          <div id="profileModerationList" class="profile-moderation-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="api.js"></script>
+    <script src="profile.js"></script>
+  </body>
+</html>
