@@ -119,8 +119,7 @@ function annToPost(a) {
 function formatErrorDetail(detail) {
   if (detail == null) return '';
   if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail))
-    return detail.map((d) => d.msg || d).join('; ');
+  if (Array.isArray(detail)) return detail.map((d) => d.msg || d).join('; ');
   if (typeof detail === 'object' && detail.message != null)
     return String(detail.message);
   return typeof detail === 'object' ? JSON.stringify(detail) : String(detail);
@@ -708,7 +707,9 @@ async function prepareGoogleSignIn() {
   const hostR = document.getElementById('googleBtnRegister');
   if (!wrapL || !wrapR || !hostL || !hostR) return;
 
-  const res = await api.request('/api/auth/google-client-id', { skipAuth: true });
+  const res = await api.request('/api/auth/google-client-id', {
+    skipAuth: true,
+  });
   if (!res.ok) return;
   const { client_id: clientId } = await res.json();
   if (!clientId) return;
@@ -771,7 +772,9 @@ async function onGoogleCredential(response) {
       10,
     );
     if (!Number.isFinite(region_id) || !Number.isFinite(city_id)) {
-      alert('Выберите регион и город, затем снова нажмите «Войти через Google».');
+      alert(
+        'Выберите регион и город, затем снова нажмите «Войти через Google».',
+      );
       return;
     }
     Object.assign(payload, { region_id, city_id });
@@ -811,7 +814,9 @@ async function onGoogleCredential(response) {
     return;
   }
 
-  alert(formatErrorDetail(body.detail) || body.message || `Ошибка ${res.status}`);
+  alert(
+    formatErrorDetail(body.detail) || body.message || `Ошибка ${res.status}`,
+  );
 }
 
 async function openAuthModal() {
@@ -961,8 +966,7 @@ function updateAdminContent() {
     .forEach((content) => content.classList.remove('active'));
   const statusSection = document.getElementById('adminStatusSection');
   if (statusSection) {
-    statusSection.style.display =
-      currentAdminType === 'reports' ? 'none' : '';
+    statusSection.style.display = currentAdminType === 'reports' ? 'none' : '';
   }
   if (currentAdminType === 'reports') {
     const el = document.getElementById('reportsContent');
@@ -999,36 +1003,108 @@ document.querySelectorAll('.admin-status-btn').forEach((btn) => {
 async function loadReportsList() {
   const list = document.getElementById('reportsList');
   const cnt = document.getElementById('reportsCount');
+  const openOnlyEl = document.getElementById('reportsOpenOnly');
   if (!list || !cnt) return;
-  const r = await api.request('/api/announcements/reports?limit=200&page=1');
+  const openOnly = openOnlyEl ? openOnlyEl.checked : false;
+  const params = new URLSearchParams({
+    limit: '50',
+    page: '1',
+    open_groups_only: openOnly ? 'true' : 'false',
+  });
+  const r = await api.request(`/api/announcements/reports?${params}`);
   if (!r.ok) {
     list.innerHTML = `<div class="info-message">${escapeHtml(await parseError(r))}</div>`;
     cnt.textContent = '0';
     return;
   }
   const data = await r.json();
-  const items = data.items || [];
-  cnt.textContent = String(data.total != null ? data.total : items.length);
-  if (items.length === 0) {
+  const groups = data.items || [];
+  cnt.textContent = String(data.total != null ? data.total : groups.length);
+  if (groups.length === 0) {
     list.innerHTML = '<div class="info-message">ЖАЛОБ ПОКА НЕТ</div>';
     return;
   }
-  list.innerHTML = items
-    .map((it) => {
-      const st = escapeHtml(it.announcement_status || '—');
-      const dt = escapeHtml(formatReplyDate(it.created_at));
-      return `
-        <div class="admin-card admin-card--report">
-            <div class="admin-card-info">
-                <div class="admin-card-name">${escapeHtml(it.ann_name)}</div>
-                <div class="admin-card-email">Объявление #${it.announcement_id} · ${st}</div>
-                <div class="admin-report-meta">${escapeHtml(it.reporter_nickname)} (${escapeHtml(it.reporter_email)}) · ${dt}</div>
+  list.innerHTML = groups
+    .map((g) => {
+      const annSt = escapeHtml(g.announcement_status || '—');
+      const ns = String(g.announcement_status || '').toLowerCase();
+      const canReject = ['pending', 'searching', 'found'].includes(ns);
+      const rejectBtn = canReject
+        ? `<button type="button" class="admin-reject-from-reports-btn" data-aid="${g.announcement_id}">ОТКЛОНИТЬ ОБЪЯВЛЕНИЕ</button>`
+        : '';
+      const rows = (g.reports || [])
+        .map((it) => {
+          const resolved = String(it.status || '').toLowerCase() === 'resolved';
+          const badge = resolved
+            ? '<span class="report-status-badge resolved">обработана</span>'
+            : '<span class="report-status-badge open">открыта</span>';
+          const dt = escapeHtml(formatReplyDate(it.created_at));
+          const resolveBtn = resolved
+            ? ''
+            : `<button type="button" class="admin-report-resolve-btn" data-rid="${it.id}">ОБРАБОТАНО</button>`;
+          return `
+            <div class="admin-report-row">
+              <div class="admin-report-row-main">
+                <div class="admin-report-row-top">
+                  ${badge}
+                </div>
+                <span class="admin-report-meta">${escapeHtml(it.reporter_nickname)} (${escapeHtml(it.reporter_email)}) · ${dt}</span>
                 <div class="admin-report-text">${escapeHtml(it.message)}</div>
+              </div>
+              <div class="admin-report-row-actions">${resolveBtn}</div>
+            </div>`;
+        })
+        .join('');
+      return `
+        <div class="admin-card admin-card--report-group">
+            <div class="admin-report-group-head">
+                <div class="admin-card-info">
+                    <div class="admin-card-name">${escapeHtml(g.ann_name)}</div>
+                    <div class="admin-card-email">Объявление #${g.announcement_id} · ${annSt}</div>
+                </div>
+                <div class="admin-report-group-actions">${rejectBtn}</div>
             </div>
+            <div class="admin-report-rows">${rows}</div>
         </div>`;
     })
     .join('');
+
+  list.querySelectorAll('.admin-report-resolve-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const rid = btn.getAttribute('data-rid');
+      if (!rid) return;
+      const res = await api.request(`/api/announcements/reports/${rid}`, {
+        method: 'PATCH',
+        json: { status: 'resolved' },
+      });
+      if (res.ok) await loadReportsList();
+      else alert(await parseError(res));
+    });
+  });
+  list.querySelectorAll('.admin-reject-from-reports-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const aid = btn.getAttribute('data-aid');
+      if (!aid) return;
+      if (
+        !confirm(
+          'Отклонить объявление? Оно пропадёт из ленты, все открытые жалобы будут помечены обработанными.',
+        )
+      )
+        return;
+      const res = await api.request(`/api/announcements/${aid}/reject`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        await loadReportsList();
+        loadPosts();
+      } else alert(await parseError(res));
+    });
+  });
 }
+
+document.getElementById('reportsOpenOnly')?.addEventListener('change', () => {
+  loadReportsList();
+});
 
 async function loadAdminData() {
   await loadActiveUsers();
@@ -1115,9 +1191,75 @@ async function loadAdminData() {
     }
   }
   if (banList) {
-    banList.innerHTML =
-      '<div class="info-message">СПИСОК ЗАБЛОКИРОВАННЫХ ОБЪЯВЛЕНИЙ В API НЕ РЕАЛИЗОВАН</div>';
-    document.getElementById('bannedPostsCount').textContent = '0';
+    const rb = await api.request(
+      '/api/announcements?state=rejected&limit=100&page=1',
+    );
+    const bannedCountEl = document.getElementById('bannedPostsCount');
+    if (!rb.ok) {
+      banList.innerHTML = `<div class="info-message">${escapeHtml(await parseError(rb))}</div>`;
+      if (bannedCountEl) bannedCountEl.textContent = '0';
+    } else {
+      const bd = await rb.json();
+      const bitems = bd.items || [];
+      if (bannedCountEl) {
+        bannedCountEl.textContent = String(
+          bd.total != null ? bd.total : bitems.length,
+        );
+      }
+      if (bitems.length === 0) {
+        banList.innerHTML =
+          '<div class="info-message">НЕТ ОТКЛОНЁННЫХ ОБЪЯВЛЕНИЙ</div>';
+      } else {
+        banList.innerHTML = bitems
+          .map(
+            (a) => `
+        <div class="admin-card admin-card-banned">
+            <label class="admin-banned-select">
+              <input type="checkbox" class="banned-post-cb" data-id="${a.id}" aria-label="Выбрать объявление" />
+            </label>
+            <div class="admin-card-info">
+                <div class="admin-card-name">${escapeHtml(a.ann_name)}</div>
+                <div class="admin-card-email">${escapeHtml((a.author_nickname || '—') + ' · отклонено')}</div>
+            </div>
+            <div class="admin-card-actions">
+                <button type="button" class="admin-unban-post-btn" data-id="${a.id}">ВЕРНУТЬ</button>
+                <button type="button" class="admin-delete-banned-post-btn" data-id="${a.id}">УДАЛИТЬ</button>
+            </div>
+        </div>`,
+          )
+          .join('');
+        banList.querySelectorAll('.admin-unban-post-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            const resAp = await api.request(
+              `/api/announcements/${id}/approve`,
+              {
+                method: 'POST',
+              },
+            );
+            if (resAp.ok) {
+              await loadAdminData();
+              loadPosts();
+            } else alert(await parseError(resAp));
+          });
+        });
+        banList
+          .querySelectorAll('.admin-delete-banned-post-btn')
+          .forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const id = btn.dataset.id;
+              if (!confirm('Удалить объявление безвозвратно?')) return;
+              const resDel = await api.request(`/api/announcements/${id}`, {
+                method: 'DELETE',
+              });
+              if (resDel.ok) {
+                await loadAdminData();
+                loadPosts();
+              } else alert(await parseError(resDel));
+            });
+          });
+      }
+    }
   }
 }
 
@@ -1335,9 +1477,33 @@ function escapeHtml(str) {
 
 document
   .getElementById('unbanSelectedPostsBtn')
-  ?.addEventListener('click', (e) => {
+  ?.addEventListener('click', async (e) => {
     e.preventDefault();
-    alert('Разблокировка объявлений в API не реализована');
+    const list = document.getElementById('bannedPostsList');
+    if (!list) return;
+    const checked = list.querySelectorAll('.banned-post-cb:checked');
+    if (checked.length === 0) {
+      alert('Отметьте объявления галочками');
+      return;
+    }
+    if (!confirm(`Вернуть в ленту объявлений: ${checked.length} шт.?`)) {
+      return;
+    }
+    for (const cb of checked) {
+      const id = cb.getAttribute('data-id');
+      if (!id) continue;
+      const res = await api.request(`/api/announcements/${id}/approve`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        alert(await parseError(res));
+        await loadAdminData();
+        loadPosts();
+        return;
+      }
+    }
+    await loadAdminData();
+    loadPosts();
   });
 
 (async function initApp() {

@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import exists, func, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,8 +27,11 @@ from app.schemas import (
     AnnouncementReplyOut,
     AnnouncementReportCreateIn,
     AnnouncementReportCreateOut,
-    AnnouncementReportAdminItem,
-    AnnouncementReportListOut,
+    AnnouncementReportGroupedListOut,
+    AnnouncementReportGroupOut,
+    AnnouncementReportPatchOut,
+    AnnouncementReportRowOut,
+    AnnouncementReportStatusPatchIn,
     AnnouncementUpdateIn,
     AnnouncementUpdateOut,
     DeleteMessage,
@@ -75,7 +77,10 @@ async def list_announcements(
     user: User | None = Depends(get_current_user_optional),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    state: str = Query("searching", description="searching | found | moderation"),
+    state: str = Query(
+        "searching",
+        description="searching | found | moderation | rejected (rejected — только admin)",
+    ),
     moderation_scope: str = Query(
         "mine",
         description="При state=moderation: mine — только мои pending/rejected; all — вся очередь pending (только admin, для панели)",
@@ -91,9 +96,10 @@ async def list_announcements(
     if mine:
         if user is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
-    elif state not in ("searching", "found", "moderation"):
+    elif state not in ("searching", "found", "moderation", "rejected"):
         raise HTTPException(
-            status_code=422, detail="state must be searching, found or moderation"
+            status_code=422,
+            detail="state must be searching, found, moderation or rejected",
         )
     rid = ann_region_id if ann_region_id is not None else ann_regions
     stmt = select(Announcement).options(
@@ -123,6 +129,13 @@ async def list_announcements(
             )
             stmt = stmt.where(mod_filter)
             count_base = count_base.where(mod_filter)
+    elif state == "rejected":
+        if user is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        if user.role is None or user.role.role_name != "admin":
+            raise HTTPException(status_code=403, detail="Admin only")
+        stmt = stmt.where(Announcement.status == "rejected")
+        count_base = count_base.where(Announcement.status == "rejected")
     elif state == "searching":
         stmt = stmt.where(Announcement.status == "searching")
         count_base = count_base.where(Announcement.status == "searching")
@@ -218,46 +231,97 @@ async def list_announcements(
     return AnnouncementListOut(total=total, items=items)
 
 
-@router.get("/reports", response_model=AnnouncementReportListOut)
-async def list_announcement_reports(
+@router.get("/reports", response_model=AnnouncementReportGroupedListOut)
+async def list_announcement_reports_grouped(
     session: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_admin),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=200),
-) -> AnnouncementReportListOut:
-    count_stmt = select(func.count()).select_from(AnnouncementReport)
-    total = int(await session.scalar(count_stmt) or 0)
-    r = await session.execute(
-        select(AnnouncementReport)
-        .options(
-            selectinload(AnnouncementReport.announcement),
-            selectinload(AnnouncementReport.reporter),
+    limit: int = Query(20, ge=1, le=100),
+    open_groups_only: bool = Query(
+        False,
+        description="Только объявления, по которым есть хотя бы одна открытая жалоба",
+    ),
+) -> AnnouncementReportGroupedListOut:
+    agg = select(
+        AnnouncementReport.announcement_id.label("aid"),
+        func.max(AnnouncementReport.id).label("mx"),
+    )
+    if open_groups_only:
+        open_ann = (
+            select(AnnouncementReport.announcement_id)
+            .where(AnnouncementReport.status == "open")
+            .distinct()
         )
-        .order_by(AnnouncementReport.id.desc())
+        agg = agg.where(AnnouncementReport.announcement_id.in_(open_ann))
+    agg_sq = agg.group_by(AnnouncementReport.announcement_id).subquery()
+    total = int(await session.scalar(select(func.count()).select_from(agg_sq)) or 0)
+    ids_result = await session.execute(
+        select(agg_sq.c.aid)
+        .order_by(agg_sq.c.mx.desc())
         .offset((page - 1) * limit)
         .limit(limit)
     )
-    rows = r.scalars().all()
-    items: list[AnnouncementReportAdminItem] = []
-    for rep in rows:
-        ann = rep.announcement
-        ru = rep.reporter
-        if ann is None or ru is None:
+    ann_ids = list(ids_result.scalars().all())
+    if not ann_ids:
+        return AnnouncementReportGroupedListOut(total=total, items=[])
+    reps_result = await session.execute(
+        select(AnnouncementReport)
+        .options(selectinload(AnnouncementReport.reporter))
+        .where(AnnouncementReport.announcement_id.in_(ann_ids))
+        .order_by(AnnouncementReport.id.desc())
+    )
+    all_reports = reps_result.scalars().unique().all()
+    by_ann: dict[int, list[AnnouncementReport]] = {}
+    for rep in all_reports:
+        by_ann.setdefault(rep.announcement_id, []).append(rep)
+    items: list[AnnouncementReportGroupOut] = []
+    for aid in ann_ids:
+        ann = await session.get(Announcement, aid)
+        if ann is None:
             continue
+        rows_out: list[AnnouncementReportRowOut] = []
+        for rep in by_ann.get(aid, []):
+            ru = rep.reporter
+            if ru is None:
+                continue
+            rows_out.append(
+                AnnouncementReportRowOut(
+                    id=rep.id,
+                    reporter_id=rep.reporter_id,
+                    reporter_nickname=ru.nickname,
+                    reporter_email=ru.email,
+                    message=rep.message,
+                    status=rep.status,
+                    created_at=rep.created_at,
+                )
+            )
         items.append(
-            AnnouncementReportAdminItem(
-                id=rep.id,
-                announcement_id=rep.announcement_id,
+            AnnouncementReportGroupOut(
+                announcement_id=aid,
                 ann_name=ann.ann_name,
                 announcement_status=ann.status,
-                reporter_id=rep.reporter_id,
-                reporter_nickname=ru.nickname,
-                reporter_email=ru.email,
-                message=rep.message,
-                created_at=rep.created_at,
+                reports=rows_out,
             )
         )
-    return AnnouncementReportListOut(total=total, items=items)
+    return AnnouncementReportGroupedListOut(total=total, items=items)
+
+
+@router.patch("/reports/{report_id}", response_model=AnnouncementReportPatchOut)
+async def patch_announcement_report_status(
+    report_id: int,
+    body: AnnouncementReportStatusPatchIn,
+    session: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> AnnouncementReportPatchOut:
+    rep = await session.get(AnnouncementReport, report_id)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if body.status not in ("open", "resolved"):
+        raise HTTPException(status_code=422, detail="Invalid status")
+    rep.status = body.status
+    await session.commit()
+    await session.refresh(rep)
+    return AnnouncementReportPatchOut(id=rep.id, status=rep.status)
 
 
 async def _can_view_replies(session: AsyncSession, user: User, ann: Announcement) -> bool:
@@ -356,14 +420,13 @@ async def create_announcement_report(
     if not msg:
         raise HTTPException(status_code=422, detail="Empty message")
     rep = AnnouncementReport(
-        announcement_id=announcement_id, reporter_id=user.id, message=msg
+        announcement_id=announcement_id,
+        reporter_id=user.id,
+        message=msg,
+        status="open",
     )
     session.add(rep)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(status_code=409, detail="Already reported")
+    await session.commit()
     await session.refresh(rep)
     return AnnouncementReportCreateOut(id=rep.id)
 
@@ -484,8 +547,10 @@ async def approve_announcement(
     a = await session.get(Announcement, announcement_id)
     if a is None:
         raise HTTPException(status_code=404, detail="Not found")
-    if a.status != "pending":
-        raise HTTPException(status_code=400, detail="Not pending")
+    if a.status not in ("pending", "rejected"):
+        raise HTTPException(
+            status_code=400, detail="Only pending or rejected can be approved"
+        )
     a.status = "found" if a.publish_in_found else "searching"
     await session.commit()
     await session.refresh(a)
@@ -501,9 +566,20 @@ async def reject_announcement(
     a = await session.get(Announcement, announcement_id)
     if a is None:
         raise HTTPException(status_code=404, detail="Not found")
-    if a.status != "pending":
-        raise HTTPException(status_code=400, detail="Not pending")
+    if a.status not in ("pending", "searching", "found"):
+        raise HTTPException(
+            status_code=400,
+            detail="Can only reject pending, searching or found announcements",
+        )
     a.status = "rejected"
+    await session.execute(
+        update(AnnouncementReport)
+        .where(
+            AnnouncementReport.announcement_id == announcement_id,
+            AnnouncementReport.status == "open",
+        )
+        .values(status="resolved")
+    )
     await session.commit()
     await session.refresh(a)
     return AnnouncementModerateResult(id=a.id, status=a.status)

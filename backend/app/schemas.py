@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -249,21 +251,35 @@ class AnnouncementReportCreateOut(BaseModel):
     id: int
 
 
-class AnnouncementReportAdminItem(BaseModel):
+class AnnouncementReportRowOut(BaseModel):
     id: int
-    announcement_id: int
-    ann_name: str
-    announcement_status: str
     reporter_id: int
     reporter_nickname: str
     reporter_email: str
     message: str
+    status: str
     created_at: datetime
 
 
-class AnnouncementReportListOut(BaseModel):
+class AnnouncementReportGroupOut(BaseModel):
+    announcement_id: int
+    ann_name: str
+    announcement_status: str
+    reports: list[AnnouncementReportRowOut]
+
+
+class AnnouncementReportGroupedListOut(BaseModel):
     total: int
-    items: list[AnnouncementReportAdminItem]
+    items: list[AnnouncementReportGroupOut]
+
+
+class AnnouncementReportStatusPatchIn(BaseModel):
+    status: Literal["open", "resolved"]
+
+
+class AnnouncementReportPatchOut(BaseModel):
+    id: int
+    status: str
 
 
 class AnnouncementListOut(BaseModel):

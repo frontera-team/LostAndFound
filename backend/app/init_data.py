@@ -96,10 +96,49 @@ async def ensure_announcement_moderation_columns() -> None:
             await conn.execute(text(s))
 
 
+async def ensure_announcement_reports_schema() -> None:
+    """Снять уникальность (ann,reporter), добавить status для старых БД."""
+    dsn = (settings.database_url or "").lower()
+    async with engine.begin() as conn:
+        if "sqlite" in dsn:
+            r = await conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='announcement_reports'"
+                )
+            )
+            if r.fetchone() is None:
+                return
+            info = await conn.execute(text("PRAGMA table_info(announcement_reports)"))
+            cols = {row[1] for row in info.fetchall()}
+            if "status" not in cols:
+                await conn.execute(
+                    text(
+                        "ALTER TABLE announcement_reports ADD COLUMN status "
+                        "VARCHAR(32) NOT NULL DEFAULT 'open'"
+                    )
+                )
+            await conn.execute(text("DROP INDEX IF EXISTS uq_report_ann_reporter"))
+        elif "postgresql" in dsn:
+            await conn.execute(
+                text(
+                    "ALTER TABLE announcement_reports ADD COLUMN IF NOT EXISTS status "
+                    "VARCHAR(32) NOT NULL DEFAULT 'open'"
+                )
+            )
+            await conn.execute(
+                text(
+                    "ALTER TABLE announcement_reports DROP CONSTRAINT IF EXISTS "
+                    "uq_report_ann_reporter"
+                )
+            )
+
+
 async def create_tables() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await ensure_announcement_moderation_columns()
+    await ensure_announcement_reports_schema()
 
 
 async def seed_reference_data(session: AsyncSession) -> None:
